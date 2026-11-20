@@ -12,7 +12,7 @@ import type {
 import { calcDays, openPunchOf, otMinutes, shiftEndMs, shiftForTime, shiftStartMs, lateMinutes, summarize } from '../attendance';
 import { type SessionUser, signSession, verifyLineIdToken } from '../auth';
 import { type Ctx, displayName, findMe, readJson, requireActive, requireUser } from '../ctx';
-import { appendRows, load } from '../data';
+import { appendRows, load, writeRow } from '../data';
 import { fmtDistance, nearestStore } from '../geo';
 import { HEADERS, SHEET, attendanceSheet, punchToRec, staffToRec, toRow } from '../schema';
 import type { Sheets } from '../sheets';
@@ -35,6 +35,11 @@ async function buildMe(sheets: Sheets, user: SessionUser): Promise<MeResponse> {
   const me = findMe(d, user);
   const base: MeResponse = {
     me,
+    claimable: me
+      ? []
+      : d.staff
+          .filter((s) => !s.lineUserId && s.status !== 'inactive')
+          .map((s) => ({ id: s.id, name: s.name, nickname: s.nickname, storeId: s.storeId })),
     lineName: user.name,
     stores: d.stores.filter((s) => s.active),
     shiftTypes: d.shiftTypes.filter((t) => t.active),
@@ -72,18 +77,19 @@ export async function getMe(c: Ctx): Promise<MeResponse> {
   return buildMe(c.sheets, requireUser(c));
 }
 
-/** POST /api/register */
+/**
+ * POST /api/register
+ * Either links this LINE account to a staff row the owner created (claimId), or creates a new row.
+ * Both end as "pending" until the owner approves, unless the owner code (SETUP_KEY) is given.
+ */
 export async function register(c: Ctx): Promise<MeResponse> {
   const user = requireUser(c);
   const body = await readJson<RegisterRequest>(c.req);
-  const name = str(body.name).slice(0, 80);
   const nickname = str(body.nickname).slice(0, 40);
   const phone = str(body.phone).replace(/[^\d+]/g, '').slice(0, 20);
-  if (!name) throw new HttpError(400, 'กรุณากรอกชื่อ-นามสกุล');
 
   const d = await load(c.sheets, { staff: true, stores: true });
   if (findMe(d, user)) throw new HttpError(409, 'บัญชี LINE นี้ลงทะเบียนแล้ว');
-  if (!d.stores.some((s) => s.id === body.storeId)) throw new HttpError(400, 'กรุณาเลือกสาขา');
 
   let role: Staff['role'] = 'staff';
   let status: Staff['status'] = 'pending';
@@ -93,20 +99,34 @@ export async function register(c: Ctx): Promise<MeResponse> {
     status = 'active';
   }
 
+  const claimed = body.claimId ? d.staff.find((s) => s.id === body.claimId) : undefined;
+  if (body.claimId) {
+    if (!claimed || claimed.status === 'inactive') throw new HttpError(400, 'ไม่พบชื่อนี้ในรายชื่อพนักงาน');
+    if (claimed.lineUserId) throw new HttpError(409, 'ชื่อนี้ถูกเชื่อมกับบัญชี LINE อื่นแล้ว กรุณาติดต่อเจ้าของร้าน');
+  }
+
+  const name = str(body.name).slice(0, 80) || claimed?.name || '';
+  if (!name) throw new HttpError(400, 'กรุณากรอกชื่อ-นามสกุล');
+  if (!d.stores.some((s) => s.id === body.storeId)) throw new HttpError(400, 'กรุณาเลือกสาขา');
+
   const staff: Staff = {
-    id: newId('ST'),
+    id: claimed?.id ?? newId('ST'),
     lineUserId: user.uid,
     lineName: user.name,
     name,
-    nickname,
-    phone,
-    role,
+    nickname: nickname || claimed?.nickname || '',
+    phone: phone || claimed?.phone || '',
+    role: role === 'owner' ? 'owner' : (claimed?.role ?? 'staff'),
     storeId: body.storeId,
     status,
-    createdAt: bkkIso(Date.now()),
+    createdAt: claimed?.createdAt || bkkIso(Date.now()),
   };
-  const headers = d.tables[SHEET.staff]?.headers ?? HEADERS.Staff;
-  await appendRows(c.sheets, SHEET.staff, headers, [toRow(staffToRec(staff), headers)]);
+  const table = d.tables[SHEET.staff]!;
+  if (claimed) {
+    await writeRow(c.sheets, SHEET.staff, table, d.rowOf.staff.get(claimed.id)!, staffToRec(staff), d.recOf.staff.get(claimed.id));
+  } else {
+    await appendRows(c.sheets, SHEET.staff, table.headers, [toRow(staffToRec(staff), table.headers)]);
+  }
   return buildMe(c.sheets, user);
 }
 

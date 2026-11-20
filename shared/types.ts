@@ -121,8 +121,17 @@ export interface StaffSummary {
 
 // ---------- API payloads ----------
 
+/** A staff row the owner created that no LINE account has claimed yet. */
+export interface ClaimableStaff {
+  id: string;
+  name: string;
+  nickname: string;
+  storeId: string;
+}
+
 export interface MeResponse {
   me: Staff | null;
+  claimable: ClaimableStaff[]; // only when me is null
   lineName: string;
   stores: Store[];
   shiftTypes: ShiftType[];
@@ -139,6 +148,7 @@ export interface LoginResponse extends MeResponse {
 }
 
 export interface RegisterRequest {
+  claimId?: string; // id of a pre-created staff row to link to this LINE account
   name: string;
   nickname: string;
   phone: string;

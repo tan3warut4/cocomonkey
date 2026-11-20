@@ -629,6 +629,16 @@ select:focus {
   cursor: pointer;
   font-size: 0.88rem;
 }
+.chip-lg {
+  min-height: 44px;
+  padding: 0 18px;
+  font-size: 1rem;
+}
+.name-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .chip.active {
   background: var(--ink);
   border-color: var(--ink);
@@ -727,6 +737,12 @@ th.is-today {
 }
 .cell-t3 {
   background: #f6e3ec;
+}
+.cell-t4 {
+  background: #fde3d3;
+}
+.cell-t5 {
+  background: #d9f0f2;
 }
 .cell-custom {
   background: #ece7f7;

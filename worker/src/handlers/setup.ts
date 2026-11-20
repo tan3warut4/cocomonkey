@@ -1,4 +1,4 @@
-import type { ShiftType, Store } from '../../../shared/types';
+import type { ShiftType, Staff, Store } from '../../../shared/types';
 import type { Ctx } from '../ctx';
 import { appendRows, ensureSheet, load } from '../data';
 import {
@@ -8,27 +8,54 @@ import {
   SHEET,
   attendanceSheet,
   shiftTypeToRec,
+  staffToRec,
   storeToRec,
   toRow,
 } from '../schema';
 import { bkkMonth } from '../time';
 import { HttpError, str } from '../util';
 
-// Mock coordinates in Bangkok — replace them later from the app (จัดการ > สาขา > ใช้ตำแหน่งปัจจุบัน)
+// Real store pins from Google Maps. To fine-tune, stand in the store and use
+// จัดการร้าน > สาขา > ใช้ตำแหน่งปัจจุบัน. The two stores are ~350 m apart, so keep radius <= 170 m.
 const SEED_STORES: Store[] = [
-  { id: 'S1', name: 'Jingjo Coconut สาขา 1', lat: 13.745543, lng: 100.534004, radiusM: 150, active: true },
-  { id: 'S2', name: 'Jingjo Coconut สาขา 2', lat: 13.779694, lng: 100.544637, radiusM: 150, active: true },
+  { id: 'CHULA', name: 'Cocomonkey สาขาจุฬา', lat: 13.7309421, lng: 100.5368796, radiusM: 150, active: true },
+  { id: 'SILOM', name: 'Cocomonkey สาขาสีลม', lat: 13.7283056, lng: 100.535095, radiusM: 150, active: true },
 ];
 
-// Two 9-hour shifts per store with a 1-hour break = 8 working hours each
-const SEED_SHIFT_TYPES: ShiftType[] = SEED_STORES.flatMap((s) => [
-  { id: `${s.id}-M`, storeId: s.id, name: 'เช้า', start: '08:30', end: '17:30', breakMin: 60, active: true },
-  { id: `${s.id}-E`, storeId: s.id, name: 'เย็น', start: '12:30', end: '21:30', breakMin: 60, active: true },
-]);
+// 9-hour spans with a 1-hour break = 8 working hours, with ~30 min to open and close.
+// Chula (hospital) is open 06:00-20:00, Sunday until 18:00. Silom Complex is open 10:00-21:00.
+const SEED_SHIFT_TYPES: ShiftType[] = [
+  { id: 'CHULA-M', storeId: 'CHULA', name: 'เช้า', start: '05:30', end: '14:30', breakMin: 60, active: true },
+  { id: 'CHULA-E', storeId: 'CHULA', name: 'บ่าย', start: '11:30', end: '20:30', breakMin: 60, active: true },
+  { id: 'CHULA-SUN', storeId: 'CHULA', name: 'บ่าย (อา.)', start: '09:30', end: '18:30', breakMin: 60, active: true },
+  { id: 'SILOM-M', storeId: 'SILOM', name: 'เช้า', start: '09:30', end: '18:30', breakMin: 60, active: true },
+  { id: 'SILOM-E', storeId: 'SILOM', name: 'เย็น', start: '12:30', end: '21:30', breakMin: 60, active: true },
+];
+
+// Staff not linked to LINE yet. Each person picks their nickname when they first open the app,
+// then the owner approves. Full name, phone and home store are filled in at that point.
+const SEED_STAFF: Staff[] = [
+  ['ST-kaew', 'แก้ว'],
+  ['ST-muay', 'มวย'],
+  ['ST-ammy', 'แอมมี่'],
+  ['ST-noon', 'นุ่น'],
+  ['ST-mick', 'มิ๊ก'],
+].map(([id, nickname]) => ({
+  id,
+  lineUserId: '',
+  lineName: '',
+  name: '',
+  nickname,
+  phone: '',
+  role: 'staff',
+  storeId: '',
+  status: 'active',
+  createdAt: '',
+}));
 
 /**
  * POST /api/setup  (header: X-Setup-Key: <SETUP_KEY>)
- * Creates missing tabs + headers and seeds mock stores, shift templates and settings.
+ * Creates missing tabs + headers and seeds the stores, shift templates, staff list and settings.
  * Safe to run more than once: it never overwrites existing data.
  */
 export async function setup(c: Ctx) {
@@ -49,7 +76,7 @@ export async function setup(c: Ctx) {
     if (!titles.has(name) && (await ensureSheet(c.sheets, name, headers))) created.push(name);
   }
 
-  const d = await load(c.sheets, { stores: true, shiftTypes: true, settings: true });
+  const d = await load(c.sheets, { staff: true, stores: true, shiftTypes: true, settings: true });
   const seeded: string[] = [];
 
   if (!d.stores.length) {
@@ -61,6 +88,11 @@ export async function setup(c: Ctx) {
     const h = d.tables[SHEET.shiftTypes]!.headers;
     await appendRows(c.sheets, SHEET.shiftTypes, h, SEED_SHIFT_TYPES.map((t) => toRow(shiftTypeToRec(t), h)));
     seeded.push(`ShiftTypes (${SEED_SHIFT_TYPES.length})`);
+  }
+  if (!d.staff.length) {
+    const h = d.tables[SHEET.staff]!.headers;
+    await appendRows(c.sheets, SHEET.staff, h, SEED_STAFF.map((st) => toRow(staffToRec(st), h)));
+    seeded.push(`Staff (${SEED_STAFF.length})`);
   }
   const haveKeys = new Set(d.tables[SHEET.settings]!.rows.map((r) => str(r.data.key)));
   const missing = SETTING_ROWS.filter((s) => !haveKeys.has(s.key));
@@ -79,6 +111,6 @@ export async function setup(c: Ctx) {
     ok: true,
     created,
     seeded,
-    next: 'เปิดแอปใน LINE แล้วลงทะเบียนด้วย "รหัสเจ้าของร้าน" (= SETUP_KEY) เพื่อเป็นเจ้าของร้านคนแรก',
+    next: 'เปิดแอปใน LINE แล้วลงทะเบียน "ไม่มีชื่อในรายการ" พร้อมรหัสเจ้าของร้าน (= SETUP_KEY) เพื่อเป็นเจ้าของร้านคนแรก',
   };
 }

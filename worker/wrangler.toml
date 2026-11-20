@@ -1,5 +1,7 @@
-name = "jingjo-staff-api"
+name = "cocomonkey-staff-api"
 main = "src/index.ts"
+workers_dev = true
+preview_urls = false
 compatibility_date = "2025-06-01"
 
 # Free plan is plenty: ~10 staff x a few calls per day.
@@ -8,9 +10,9 @@ compatibility_date = "2025-06-01"
 #   SESSION_SECRET   random string, e.g. `openssl rand -hex 32`
 #   SETUP_KEY        random string for /api/setup and the first owner registration
 [vars]
-SPREADSHEET_ID = "PUT_YOUR_GOOGLE_SHEET_ID_HERE"
-LINE_CHANNEL_ID = "PUT_YOUR_LINE_LOGIN_CHANNEL_ID_HERE"
-ALLOWED_ORIGINS = "https://YOUR_GITHUB_USERNAME.github.io,http://localhost:5173"
+SPREADSHEET_ID = "1xwSi7hhgi3NxE-UCVBZZ66u98u74jPhpdlq1bEkVDSk"
+LINE_CHANNEL_ID = "2012731172"
+ALLOWED_ORIGINS = "https://tan3warut4.github.io,http://localhost:5173"
 
 [observability]
 enabled = true

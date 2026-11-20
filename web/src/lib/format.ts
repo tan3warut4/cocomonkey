@@ -66,7 +66,7 @@ export function weekStart(date: string): string {
 }
 
 export const staffName = (s?: Pick<Staff, 'name' | 'nickname'>) =>
-  !s ? '–' : s.nickname ? `${s.nickname} · ${s.name}` : s.name;
+  !s ? '–' : s.nickname && s.name ? `${s.nickname} · ${s.name}` : s.nickname || s.name || '–';
 
 export const FLAG_LABEL: Record<DayFlag, string> = {
   late: 'สาย',

@@ -47,4 +47,5 @@ export function requireOwner(d: Loaded, user: SessionUser): Staff {
   return me;
 }
 
-export const displayName = (s: Pick<Staff, 'name' | 'nickname'>) => (s.nickname ? `${s.name} (${s.nickname})` : s.name);
+export const displayName = (s: Pick<Staff, 'name' | 'nickname'>) =>
+  s.name && s.nickname ? `${s.name} (${s.nickname})` : s.name || s.nickname;

@@ -1,5 +1,5 @@
 {
-  "name": "jingjo-staff-api",
+  "name": "cocomonkey-staff-api",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,9 +9,9 @@
     "test": "tsx --test src/attendance.test.ts"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250601.0",
+    "@cloudflare/workers-types": "^5.20261118.1",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
-    "wrangler": "^4.20.0"
+    "wrangler": "^4.165.0"
   }
 }

@@ -102,7 +102,7 @@ function Shell({ children, wide }: { children: ReactNode; wide?: boolean }) {
     <div className="app">
       <header className="topbar">
         <span className="brand-mark" aria-hidden />
-        <span className="brand">Jingjo Coconut</span>
+        <span className="brand">Cocomonkey</span>
         {DEV_MODE && <span className="badge badge-amber">DEV</span>}
       </header>
       <main className={wide ? 'content content-wide' : 'content'}>{children}</main>

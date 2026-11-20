@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.wrangler/
+
+# secrets — this repo is public (GitHub Pages free plan)
+.dev.vars
+.env
+.env.local
+*service-account*.json
+*-key.json
+
+.DS_Store
+# Google service-account keys at the repo root (e.g. cocomonkey-staff-xxxx.json)
+/*.json
+Claude outputs/

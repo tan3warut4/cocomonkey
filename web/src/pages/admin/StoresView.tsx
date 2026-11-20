@@ -62,7 +62,7 @@ export default function StoresView() {
   return (
     <div className="stack">
       <p className="muted small">
-        ยืนอยู่ในร้านแล้วกด “ใช้ตำแหน่งปัจจุบัน” เพื่อแทนพิกัดทดสอบ · พนักงานต้องอยู่ภายในรัศมีจึงลงเวลาได้
+        พิกัดตั้งจาก Google Maps แล้ว ถ้าพนักงานในร้านลงเวลาไม่ผ่าน ให้ยืนในร้านแล้วกด “ใช้ตำแหน่งปัจจุบัน” · พนักงานต้องอยู่ภายในรัศมีจึงลงเวลาได้
       </p>
       {error && <ErrorBox message={error} />}
       {msg && <div className="alert alert-green">{msg}</div>}

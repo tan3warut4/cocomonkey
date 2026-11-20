@@ -9,7 +9,7 @@ Do these in order. Keep a note of the values in **bold**, because later steps ne
 | **LINE_CHANNEL_ID** | LINE Login channel → Basic settings | `worker/wrangler.toml` |
 | **LIFF ID** | LINE Login channel → LIFF | GitHub variable `VITE_LIFF_ID` |
 | **Worker URL** | `wrangler deploy` output | GitHub variable `VITE_API_URL` |
-| **GitHub Pages URL** | `https://<user>.github.io/<repo>/` | LIFF endpoint URL + `ALLOWED_ORIGINS` |
+| **GitHub Pages URL** | `https://tan3warut4.github.io/cocomonkey/` | LIFF endpoint URL (`ALLOWED_ORIGINS` is already set) |
 
 You need Node.js 22+ and Git.
 
@@ -17,33 +17,34 @@ You need Node.js 22+ and Git.
 
 ## 1. Google Sheet
 
-1. Sign in with the Google account that should own the data, ideally the shop's account rather than a personal one.
-2. Create a blank Google Sheet, e.g. "Jingjo Staff DB".
+1. Sign in with the **shop's** Google account, so the data belongs to the business rather than one person.
+2. Create a blank Google Sheet, e.g. "Cocomonkey Staff DB".
+   Share it as **Editor** with the owner's personal Google account (and yours, while you maintain the app) so they can open it from their own login.
 3. Copy the ID from the URL: `https://docs.google.com/spreadsheets/d/`**`THIS_PART`**`/edit` → **SPREADSHEET_ID**.
 
 The tabs are created later by `/api/setup`. Leave the sheet empty.
 
 ## 2. Google service account (lets the Worker edit the sheet)
 
-1. Open https://console.cloud.google.com → create a project, e.g. `jingjo-staff`.
+1. Open https://console.cloud.google.com → create a project, e.g. `cocomonkey-staff`.
 2. **APIs & Services → Library** → search **Google Sheets API** → **Enable**.
-3. **IAM & Admin → Service Accounts → Create service account**, e.g. `jingjo-sheets`. No roles are needed. Click Done.
+3. **IAM & Admin → Service Accounts → Create service account**, e.g. `cocomonkey-sheets`. No roles are needed. Click Done.
 4. Open the service account → **Keys → Add key → Create new key → JSON**. A `.json` file downloads. This is the **Service account JSON key**. Keep it private and never commit it.
-5. Copy the service account email (`jingjo-sheets@<project>.iam.gserviceaccount.com`).
+5. Copy the service account email (`cocomonkey-sheets@<project>.iam.gserviceaccount.com`).
 6. In the Google Sheet, click **Share**, paste that email, give it **Editor**, untick "Notify", and share.
 
 > If step 4 says key creation is disabled, the account is under a Google Workspace/Cloud organization that blocks keys. Use a regular Google account, or ask the org admin to allow keys for this project.
 
 ## 3. LINE Login channel + LIFF app
 
-1. Open https://developers.line.biz/console → create a **Provider** (e.g. "Jingjo Coconut").
+1. Open https://developers.line.biz/console → create a **Provider** (e.g. "Cocomonkey").
    If the shop already has a LINE Official Account, use the same provider it's under.
 2. **Create a new channel → LINE Login**:
    - Region: Thailand. App type: **Web app**. Fill in the name, description and email.
 3. **Basic settings** → copy **Channel ID** → **LINE_CHANNEL_ID**.
 4. **LIFF** tab → **Add**:
    - Size: **Full**
-   - Endpoint URL: `https://<github-user>.github.io/<repo>/` (from step 5; you can edit it later)
+   - Endpoint URL: `https://tan3warut4.github.io/cocomonkey/`
    - Scopes: tick **openid** and **profile**
    - Add friend option: "On (normal)" if you linked the Official Account, otherwise Off
    - Save → copy the **LIFF ID** (looks like `1234567890-AbCdEfGh`).
@@ -60,16 +61,16 @@ npm install
 npx wrangler login          # opens the browser, sign in to Cloudflare
 ```
 
-Edit `worker/wrangler.toml`:
+Edit `worker/wrangler.toml` and fill in the two IDs. `ALLOWED_ORIGINS` is already set to your GitHub Pages origin.
 
 ```toml
 [vars]
 SPREADSHEET_ID = "<SPREADSHEET_ID>"
 LINE_CHANNEL_ID = "<LINE_CHANNEL_ID>"
-ALLOWED_ORIGINS = "https://<github-user>.github.io,http://localhost:5173"
+ALLOWED_ORIGINS = "https://tan3warut4.github.io,http://localhost:5173"
 ```
 
-`ALLOWED_ORIGINS` is the origin only: no `/<repo>` path, no trailing slash.
+`ALLOWED_ORIGINS` is the origin only: no `/cocomonkey` path, no trailing slash.
 
 Set the secrets. Each command prompts for the value, except the first one, which reads the file:
 
@@ -80,13 +81,13 @@ npx wrangler secret put SETUP_KEY          # any long random text; also the "own
 npx wrangler deploy
 ```
 
-The deploy prints the **Worker URL**, e.g. `https://jingjo-staff-api.<you>.workers.dev`.
+The deploy prints the **Worker URL**, e.g. `https://cocomonkey-staff-api.<you>.workers.dev`.
 The first time, Cloudflare may ask you to choose a `workers.dev` subdomain.
 
-Create the sheet tabs and demo data, including 2 stores with mock coordinates, 2 shift templates per store and default settings:
+Create the sheet tabs and starting data: both stores (pinned from Google Maps), 5 shift templates, the 5 staff nicknames and default settings:
 
 ```bash
-curl -X POST https://jingjo-staff-api.<you>.workers.dev/api/setup -H "X-Setup-Key: <SETUP_KEY>"
+curl -X POST https://cocomonkey-staff-api.<you>.workers.dev/api/setup -H "X-Setup-Key: <SETUP_KEY>"
 ```
 
 The Google Sheet should now have the tabs `Stores`, `Staff`, `ShiftTypes`, `Shifts`, `Settings` and `Attendance_YYYY-MM`. You can delete the default `Sheet1`.
@@ -97,11 +98,11 @@ Never set `DEV_AUTH` on the deployed Worker. It is for local development only.
 
 GitHub Pages is free for **public** repos, so the code is public. That's fine, because every secret lives in Cloudflare, not in the repo.
 
+The repo `tan3warut4/cocomonkey` already exists. Make sure it is **public**, then push:
+
 ```bash
-cd <project root>
-git init && git add . && git commit -m "Jingjo staff app"
-git branch -M main
-git remote add origin https://github.com/<github-user>/<repo>.git
+cd ~/Desktop/cocomonkey
+git add . && git commit -m "Cocomonkey staff app"
 git push -u origin main
 ```
 
@@ -113,17 +114,18 @@ On GitHub:
    - `VITE_API_URL` = **Worker URL** (no trailing slash)
 3. **Actions** tab → "Deploy web app to GitHub Pages" → **Run workflow**. Later pushes to `main` deploy automatically.
 
-The site goes live at `https://<github-user>.github.io/<repo>/`. Make sure this exact URL is the LIFF **Endpoint URL** (step 3.4).
+The site goes live at `https://tan3warut4.github.io/cocomonkey/`. Make sure this exact URL is the LIFF **Endpoint URL** (step 3.4).
 
 ## 6. First run
 
 1. On your phone, open `https://liff.line.me/<LIFF ID>` in LINE (send it to yourself in a chat and tap it).
 2. Allow location when asked. On iOS, check **Settings → LINE → Location → While Using the App**.
-3. Register: fill in the form, open **สำหรับเจ้าของร้าน**, and enter the **owner code** (= `SETUP_KEY`). You are now the owner.
-4. **จัดการร้าน → สาขา**: stand inside each store and tap **ใช้ตำแหน่งปัจจุบันเป็นที่ตั้งร้าน**. This replaces the mock coordinates. Adjust the radius if a store is inside a mall.
-5. Rename the stores in the `Stores` tab of the sheet, and adjust shift templates in `ShiftTypes` (name, start, end, break).
+3. Register: tap **ไม่มีชื่อในรายการ**, fill in the form, open **สำหรับเจ้าของร้าน**, and enter the **owner code** (= `SETUP_KEY`). You are now the owner.
+4. Store pins are already set from Google Maps. Clock in once at each store to test. If it says **นอกพื้นที่** while you're inside, go to **จัดการร้าน → สาขา** and tap **ใช้ตำแหน่งปัจจุบันเป็นที่ตั้งร้าน** while standing in the store.
+5. Check the shift templates in the `ShiftTypes` tab against the real rota (name, start, end, break). The defaults are guesses from the opening hours.
 6. Send the LIFF link to staff, or add it to the Official Account's rich menu (LINE Official Account Manager → Rich menus → action = Link → `https://liff.line.me/<LIFF ID>`).
-7. Staff register → **จัดการร้าน → พนักงาน → อนุมัติ**.
+7. Staff open the link, tap their own nickname (แก้ว, มวย, แอมมี่, นุ่น, มิ๊ก), fill in their full name, phone and home store → **จัดการร้าน → พนักงาน → อนุมัติ**. Check the LINE name shown before approving, so nobody claims someone else's name.
+   You can schedule them in the roster before they link LINE.
 8. **จัดการร้าน → ตารางกะ**: assign shifts for the week → **บันทึก**. Next week, use **คัดลอกสัปดาห์ก่อน**.
 
 ---
@@ -133,7 +135,8 @@ The site goes live at `https://<github-user>.github.io/<repo>/`. Make sure this 
 The sheet is the database, and hand edits are fine with a few rules:
 
 - Don't rename tabs or header cells, and don't reorder columns. Adding extra columns at the right is OK.
-- **Stores**: add a row to add a store (`id` must be unique, e.g. `S3`). Set `active` to `FALSE` to hide one.
+- **Stores**: add a row to add a store (`id` must be unique, e.g. `SIAM`). Set `active` to `FALSE` to hide one.
+- **Staff**: to add a new hire before they open the app, add a row with a unique `id` (e.g. `ST-fah`), their `nickname` and `status` = `active`. They pick that name when they register.
 - **ShiftTypes**: add or edit templates. Times can be typed as `08:30`. Changing a template does not rewrite shifts already scheduled.
 - **Shifts**: you can edit `start`/`end` for one day, or add a row by hand. A row without an `id` still works.
 - **Attendance_YYYY-MM**: one tab per month, created automatically. To fix a forgotten clock-out, add a row with `staff_id`, `type` = `OUT` and `timestamp` like `2026-11-19 17:30`.
@@ -161,7 +164,7 @@ See the README "Quick start". Tips:
 | Staff can't log in, only you can | Publish the LINE Login channel (step 3.5) |
 | Blank page on GitHub Pages | Check the Actions log; the repo variables must be set; LIFF endpoint must match the Pages URL exactly |
 | "ไม่ได้รับอนุญาตให้ใช้ตำแหน่ง" | Phone settings → LINE → Location → allow; turn on GPS |
-| "สัญญาณ GPS ยังไม่แม่นยำพอ" | Move near a window or turn on Wi-Fi; or raise `max_gps_accuracy_m` in Settings |
+| "สัญญาณ GPS ยังไม่แม่นยำพอ" | Both stores are indoors (hospital building, mall), where GPS is weaker. Turn on Wi-Fi (it improves location) or move near the entrance. If it keeps happening, raise `max_gps_accuracy_m` to 150 in Settings |
 | Inside the store but "นอกพื้นที่" | Re-set the store location from inside the store, or increase its radius |
 | Worker logs | `cd worker && npx wrangler tail` |
 

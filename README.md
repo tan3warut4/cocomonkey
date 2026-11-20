@@ -1,6 +1,6 @@
-# Jingjo Coconut · Staff clock-in & shifts (LINE LIFF)
+# Cocomonkey · Staff clock-in & shifts (LINE LIFF)
 
-A LINE LIFF web app for a small shop (2 stores, ~10 staff):
+A LINE LIFF web app for Cocomonkey (สาขาจุฬา and สาขาสีลม, 5 staff):
 
 - **Clock in / out by location.** The phone's GPS must be within the store radius (default 150 m). The server records the time, not the phone.
 - **Shift roster.** The owner assigns shift templates per day in a weekly grid, with "copy last week".
@@ -18,6 +18,14 @@ LINE app ──> LIFF web app (GitHub Pages, React + TS + Vite)
                  ▼
          Google Sheet (service account)
 ```
+
+## Starting data (created by `/api/setup`)
+
+| Tab | Rows |
+|---|---|
+| Stores | `CHULA` Cocomonkey สาขาจุฬา (Chulalongkorn Hospital, Chakri Thotsamaramathibodin bldg) · `SILOM` Cocomonkey สาขาสีลม (Silom Complex). Pins come from Google Maps, radius 150 m. The stores are ~350 m apart, so keep each radius ≤ 170 m. |
+| ShiftTypes | จุฬา: เช้า 05:30–14:30, บ่าย 11:30–20:30, บ่าย (อา.) 09:30–18:30 · สีลม: เช้า 09:30–18:30, เย็น 12:30–21:30. All are 9 h with a 1 h break, set from the opening hours (จุฬา 06:00–20:00 / Sun –18:00, สีลม 10:00–21:00). Adjust them to the real rota. |
+| Staff | แก้ว, มวย, แอมมี่, นุ่น, มิ๊ก (not linked to LINE yet). Each person taps their nickname the first time they open the app, then the owner approves them. |
 
 ## Repo layout
 
@@ -46,7 +54,7 @@ cp .env.example .env.local             # leave VITE_LIFF_ID empty = DEV mode
 npm run dev                            # open http://localhost:5173/?as=owner
 ```
 
-In DEV mode, `?as=<anything>` logs you in as a fake LINE user. Register the first one with the owner code (= `SETUP_KEY`). To fake GPS, use Chrome DevTools → More tools → Sensors → Location.
+In DEV mode, `?as=<anything>` logs you in as a fake LINE user. Register the first one via **ไม่มีชื่อในรายการ** with the owner code (= `SETUP_KEY`); use other `?as=` values to try the staff name-picking flow. To fake GPS, use Chrome DevTools → More tools → Sensors → Location.
 
 ```bash
 cd worker && npm test                  # late/OT + date parsing tests

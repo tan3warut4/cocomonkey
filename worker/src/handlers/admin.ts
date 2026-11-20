@@ -26,7 +26,8 @@ import {
 } from '../time';
 import { HttpError, newId, str } from '../util';
 
-const staffSort = (a: Staff, b: Staff) => a.storeId.localeCompare(b.storeId) || a.name.localeCompare(b.name, 'th');
+const staffSort = (a: Staff, b: Staff) =>
+  a.storeId.localeCompare(b.storeId) || (a.nickname || a.name).localeCompare(b.nickname || b.name, 'th');
 
 // ---------- Staff ----------
 

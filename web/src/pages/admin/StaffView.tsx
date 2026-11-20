@@ -2,6 +2,7 @@ import type { Staff, StaffUpdateRequest, Store } from '@shared/types';
 import { useEffect, useState } from 'react';
 import { Card, ErrorBox, Spinner } from '../../components/ui';
 import { api, errMsg } from '../../lib/api';
+import { staffName } from '../../lib/format';
 
 export default function StaffView({ meId }: { meId: string }) {
   const [staff, setStaff] = useState<Staff[] | null>(null);
@@ -47,6 +48,11 @@ export default function StaffView({ meId }: { meId: string }) {
   const inactive = staff.filter((s) => s.status === 'inactive');
   const storeSelect = (s: Staff) => (
     <select value={s.storeId} disabled={busyId === s.id} onChange={(e) => update(s, { storeId: e.target.value })}>
+      {!s.storeId && (
+        <option value="" disabled>
+          เลือกสาขา
+        </option>
+      )}
       {stores.map((st) => (
         <option key={st.id} value={st.id}>
           {st.name}
@@ -56,7 +62,8 @@ export default function StaffView({ meId }: { meId: string }) {
   );
   const who = (s: Staff) => (
     <div>
-      <strong>{s.nickname ? `${s.nickname} · ${s.name}` : s.name}</strong>
+      <strong>{staffName(s)}</strong>{' '}
+      {!s.lineUserId && <span className="badge badge-gray">ยังไม่เชื่อม LINE</span>}
       <div className="muted small">
         LINE: {s.lineName || '–'}
         {s.phone && (
@@ -75,7 +82,7 @@ export default function StaffView({ meId }: { meId: string }) {
 
       <Card title={`รออนุมัติ (${pending.length})`}>
         {pending.length === 0 ? (
-          <p className="muted">ไม่มีคำขอใหม่ · ส่งลิงก์แอปให้พนักงานลงทะเบียนผ่าน LINE</p>
+          <p className="muted">ไม่มีคำขอใหม่ · ส่งลิงก์แอปให้พนักงาน แล้วให้เลือกชื่อตัวเองตอนลงทะเบียน</p>
         ) : (
           <ul className="list">
             {pending.map((s) => (

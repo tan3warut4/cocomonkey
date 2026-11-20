@@ -7,7 +7,7 @@ import { addDays, fmtDate, todayStr, weekStart } from '../../lib/format';
 const key = (date: string, staffId: string) => `${date}|${staffId}`;
 const CUSTOM = '__custom';
 
-/** "Jingjo Coconut สาขา 1" -> "สาขา 1": drop words every store name shares, but never leave just a number. */
+/** "Cocomonkey สาขาจุฬา" -> "สาขาจุฬา": drop words every store name shares, but never leave just a number. */
 function shortNames(stores: Store[]): Map<string, string> {
   const words = stores.map((s) => s.name.split(/\s+/));
   let n = 0;
@@ -82,7 +82,7 @@ export default function RosterView() {
 
   const types = data.shiftTypes.filter((t) => t.active);
   const typeById = new Map(data.shiftTypes.map((t) => [t.id, t]));
-  const toneOf = new Map(data.shiftTypes.map((t, i) => [t.id, i % 4]));
+  const toneOf = new Map(data.shiftTypes.map((t, i) => [t.id, i % 6]));
   const short = shortNames(data.stores);
   const staff = data.staff.filter((s) => storeFilter === 'all' || s.storeId === storeFilter);
 
@@ -167,7 +167,7 @@ export default function RosterView() {
               <tr key={s.id}>
                 <th className="sticky-col">
                   <div className="roster-name">{s.nickname || s.name}</div>
-                  <div className="small muted">{short.get(s.storeId)}</div>
+                  <div className="small muted">{short.get(s.storeId) ?? 'ยังไม่ระบุสาขา'}</div>
                 </th>
                 {days.map((d) => {
                   const k = key(d, s.id);
