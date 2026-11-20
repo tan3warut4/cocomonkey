@@ -1,0 +1,16 @@
+name = "jingjo-staff-api"
+main = "src/index.ts"
+compatibility_date = "2025-06-01"
+
+# Free plan is plenty: ~10 staff x a few calls per day.
+# Public config (not secret). Secrets are set with `npx wrangler secret put <NAME>`:
+#   GOOGLE_SA_JSON   full JSON key of the Google service account
+#   SESSION_SECRET   random string, e.g. `openssl rand -hex 32`
+#   SETUP_KEY        random string for /api/setup and the first owner registration
+[vars]
+SPREADSHEET_ID = "PUT_YOUR_GOOGLE_SHEET_ID_HERE"
+LINE_CHANNEL_ID = "PUT_YOUR_LINE_LOGIN_CHANNEL_ID_HERE"
+ALLOWED_ORIGINS = "https://YOUR_GITHUB_USERNAME.github.io,http://localhost:5173"
+
+[observability]
+enabled = true

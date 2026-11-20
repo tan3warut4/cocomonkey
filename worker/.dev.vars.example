@@ -1,0 +1,10 @@
+# Copy to .dev.vars for `npm run dev` (never commit .dev.vars).
+# GOOGLE_SA_JSON must be on ONE line. Make it with:
+#   node -e "console.log(JSON.stringify(require('./service-account.json')))"
+GOOGLE_SA_JSON='{"type":"service_account","client_email":"...","private_key":"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"}'
+SESSION_SECRET=change-me-to-a-long-random-string
+SETUP_KEY=change-me-too
+
+# Local only: lets the web app log in as "dev:<any-id>" without LINE.
+# NEVER set this on the deployed Worker.
+DEV_AUTH=true
