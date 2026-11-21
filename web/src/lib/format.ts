@@ -87,6 +87,8 @@ export const FLAG_LABEL: Record<DayFlag, string> = {
   upcoming: 'ยังไม่ถึงเวลา',
   not_in_yet: 'ยังไม่เข้างาน',
   in_progress: 'กำลังทำงาน',
+  on_break: 'กำลังพัก',
+  over_break: 'พักเกิน',
   ot: 'OT',
 };
 
@@ -100,5 +102,7 @@ export const FLAG_TONE: Record<DayFlag, 'red' | 'amber' | 'green' | 'blue' | 'gr
   upcoming: 'gray',
   not_in_yet: 'amber',
   in_progress: 'green',
+  on_break: 'amber',
+  over_break: 'amber',
   ot: 'blue',
 };

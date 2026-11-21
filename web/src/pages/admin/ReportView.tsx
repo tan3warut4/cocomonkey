@@ -33,7 +33,7 @@ export default function ReportView() {
     if (!data) return;
     downloadCsv(
       `summary-${data.month}.csv`,
-      ['รหัส', 'ชื่อ', 'กะทั้งหมด', 'มาทำงาน', 'ขาด', 'สาย (ครั้ง)', 'สาย (นาที)', 'ออกก่อน (นาที)', 'ชั่วโมงปกติ', 'OT (ชั่วโมง)', 'นอกตาราง (ชั่วโมง)', 'ลืมลงเวลา (ครั้ง)'],
+      ['รหัส', 'ชื่อ', 'กะทั้งหมด', 'มาทำงาน', 'ขาด', 'สาย (ครั้ง)', 'สาย (นาที)', 'ออกก่อน (นาที)', 'ชั่วโมงปกติ', 'OT (ชั่วโมง)', 'นอกตาราง (ชั่วโมง)', 'ลืมลงเวลา (ครั้ง)', 'พักเกิน (ครั้ง)', 'พักเกิน (นาที)'],
       data.summaries.map((s) => [
         s.staffId,
         s.name,
@@ -47,6 +47,8 @@ export default function ReportView() {
         hours2(s.otMin),
         hours2(s.unscheduledMin),
         s.missingPunch,
+        s.overBreakCount,
+        s.overBreakMin,
       ]),
     );
   }
@@ -55,7 +57,7 @@ export default function ReportView() {
     if (!data) return;
     downloadCsv(
       `daily-${data.month}.csv`,
-      ['วันที่', 'รหัส', 'ชื่อ', 'สาขา', 'กะ', 'เริ่มกะ', 'เลิกกะ', 'เข้า', 'ออก', 'สาย (นาที)', 'ออกก่อน (นาที)', 'ปกติ (นาที)', 'OT (นาที)', 'นอกตาราง (นาที)', 'หมายเหตุ'],
+      ['วันที่', 'รหัส', 'ชื่อ', 'สาขา', 'กะ', 'เริ่มกะ', 'เลิกกะ', 'เข้า', 'ออก', 'สาย (นาที)', 'ออกก่อน (นาที)', 'พักตามกะ (นาที)', 'พักจริง (นาที)', 'พักเกิน (นาที)', 'ปกติ (นาที)', 'OT (นาที)', 'นอกตาราง (นาที)', 'หมายเหตุ'],
       data.days.map((d) => [
         d.date,
         d.staffId,
@@ -68,6 +70,9 @@ export default function ReportView() {
         d.outTs ? `${hhmm(d.outTs)}${d.outTs.slice(0, 10) !== d.date ? ' (+1)' : ''}` : '',
         d.lateMin,
         d.earlyLeaveMin,
+        d.breakMin ?? '',
+        d.breakTakenMin ?? '',
+        d.overBreakMin,
         d.regularMin,
         d.otMin,
         d.unscheduledMin,
@@ -105,6 +110,7 @@ export default function ReportView() {
                   <th>ขาด</th>
                   <th>ลืมลงเวลา</th>
                   <th>นอกตาราง</th>
+                  <th>พักเกิน</th>
                 </tr>
               </thead>
               <tbody>
@@ -121,6 +127,7 @@ export default function ReportView() {
                     <td className={s.absent ? 't-red' : ''}>{s.absent || '–'}</td>
                     <td className={s.missingPunch ? 't-red' : ''}>{s.missingPunch || '–'}</td>
                     <td className="mono">{s.unscheduledMin ? fmtHM(s.unscheduledMin) : '–'}</td>
+                    <td className={s.overBreakCount ? 't-amber' : ''}>{s.overBreakCount ? `${s.overBreakCount} (${s.overBreakMin}น.)` : '–'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -147,6 +154,12 @@ export default function ReportView() {
                           {d.lateMin > 0 && <span className="t-amber"> · สาย {d.lateMin}น.</span>}
                           {d.otMin > 0 && <span className="t-blue"> · OT {fmtHM(d.otMin)}</span>}
                         </div>
+                        {d.breakTakenMin !== undefined && (
+                          <div className={`small ${d.overBreakMin ? 't-amber' : 'muted'}`}>
+                            พัก {d.breakTakenMin} นาที{d.breakMin ? ` (กะ ${d.breakMin})` : ''}
+                            {d.overBreakMin > 0 && ` · เกิน ${d.overBreakMin} นาที`}
+                          </div>
+                        )}
                         <Flags flags={d.flags.filter((f) => f !== 'late' && f !== 'ot')} />
                       </div>
                     </li>

@@ -25,7 +25,7 @@ export default function TodayView() {
   if (error) return <ErrorBox message={error} onRetry={() => setReload((x) => x + 1)} />;
   if (!data) return <Spinner />;
 
-  const working = data.days.filter((d) => d.flags.includes('in_progress')).length;
+  const working = data.days.filter((d) => d.flags.includes('in_progress') || d.flags.includes('on_break')).length;
   const late = data.days.filter((d) => d.lateMin > 0).length;
   const notIn = data.days.filter((d) => d.flags.includes('not_in_yet') || d.flags.includes('absent')).length;
   const staffById = new Map(data.staff.map((s) => [s.id, s]));

@@ -1,9 +1,32 @@
-import type { MeResponse, PunchType } from '@shared/types';
+import type { MeResponse, Punch, PunchType } from '@shared/types';
 import { useCallback, useEffect, useState } from 'react';
 import { Card, PinIcon, RefreshIcon } from '../components/ui';
 import { api, errMsg } from '../lib/api';
 import { bkkMs, fmtClock, fmtDuration, fmtLongDate, fmtMin, hhmm, staffName } from '../lib/format';
 import { type Position, fmtDistance, getPosition, nearestStore } from '../lib/geo';
+
+/** Clocked break time in ms; an open break counts until `endMs`. */
+function breakMsOf(ps: Punch[], endMs: number): number {
+  let total = 0;
+  let start: number | null = null;
+  for (const p of ps) {
+    if (p.type === 'BREAK_START' && start === null) start = p.ms;
+    else if (p.type === 'BREAK_END' && start !== null) {
+      total += p.ms - start;
+      start = null;
+    }
+  }
+  if (start !== null && endMs > start) total += endMs - start;
+  return total;
+}
+
+const PUNCH_LABEL: Record<PunchType, string> = { IN: 'เข้า', OUT: 'ออก', BREAK_START: 'พัก', BREAK_END: 'กลับ' };
+const PUNCH_BADGE: Record<PunchType, string> = {
+  IN: 'badge-green',
+  OUT: 'badge-brown',
+  BREAK_START: 'badge-amber',
+  BREAK_END: 'badge-blue',
+};
 
 type GeoState =
   | { kind: 'idle' }
@@ -45,13 +68,16 @@ export default function ClockPage({ me, setMe }: { me: MeResponse; setMe: (m: Me
 
   const storeName = (id: string) => me.stores.find((s) => s.id === id)?.name ?? id;
   const shiftName = (id: string) => me.shiftTypes.find((t) => t.id === id)?.name ?? 'กะ';
-  const nextType: PunchType = me.openPunch ? 'OUT' : 'IN';
   const near = geo.kind === 'ok' ? nearestStore(me.stores, geo.pos) : null;
   const inside = !!near && near.distanceM <= near.store.radiusM;
 
-  // Live work timer while clocked in
+  // Live work / break timers while clocked in
   const serverNow = now.getTime() + offsetMs;
   const open = me.openPunch;
+  const lastSession = (me.sessionPunches ?? [])[(me.sessionPunches ?? []).length - 1];
+  const onBreak = lastSession?.type === 'BREAK_START' ? lastSession : null;
+  const breakMs = open ? breakMsOf((me.sessionPunches ?? []), serverNow) : 0;
+  const workMs = open ? serverNow - open.ms - breakMs : 0;
   const openShift = open
     ? [...me.todayShifts, ...me.upcomingShifts].find((s) => {
         const st = bkkMs(s.date, s.start);
@@ -69,18 +95,30 @@ export default function ClockPage({ me, setMe }: { me: MeResponse; setMe: (m: Me
     shiftNote = left > 0 ? `เลิกกะ ${openShift.end} น. · อีก ${fmtMin(left)}` : `เลยเวลาเลิกกะ ${fmtMin(-left)}`;
   }
 
-  async function doPunch() {
+  const breakAllowed = openShift?.breakMin ?? 0;
+  const breakLeftMin = breakAllowed - Math.floor(breakMs / 60_000);
+
+  async function doPunch(type: PunchType) {
     setBusy(true);
     setResult(null);
     try {
-      const pos = await locate(); // always use a fresh position
-      if (!pos) throw new Error('ไม่พบตำแหน่ง กรุณาลองใหม่');
-      const r = await api.punch({ type: nextType, lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy });
+      let body: { type: PunchType; lat?: number; lng?: number; accuracy?: number } = { type };
+      if (type === 'IN' || type === 'OUT') {
+        const pos = await locate(); // clock in/out always uses a fresh position
+        if (!pos) throw new Error('ไม่พบตำแหน่ง กรุณาลองใหม่');
+        body = { type, lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy };
+      } else if (geo.kind === 'ok') {
+        // Breaks don't need to be in the store; send the last known position if we have one
+        body = { type, lat: geo.pos.lat, lng: geo.pos.lng, accuracy: geo.pos.accuracy };
+      }
+      const r = await api.punch(body);
       navigator.vibrate?.(60);
       setResult({ ok: true, text: r.message });
+      const t = r.punch.type;
       setMe({
         ...me,
-        openPunch: r.punch.type === 'IN' ? r.punch : null,
+        openPunch: t === 'IN' ? r.punch : t === 'OUT' ? null : me.openPunch,
+        sessionPunches: t === 'IN' || t === 'OUT' ? [] : [...(me.sessionPunches ?? []), r.punch],
         todayPunches: [...me.todayPunches, r.punch],
       });
     } catch (e) {
@@ -138,24 +176,65 @@ export default function ClockPage({ me, setMe }: { me: MeResponse; setMe: (m: Me
       </div>
 
       <div className="punch-wrap">
-        {open && (
+        {open && !onBreak && (
           <div className="timer" aria-live="off">
             <div className="timer-label">ทำงานมาแล้ว</div>
-            <div className="timer-value">{fmtDuration(serverNow - open.ms)}</div>
+            <div className="timer-value">{fmtDuration(workMs)}</div>
             <div className="timer-sub">
               เข้างาน {hhmm(open.ts)} น. · {storeName(open.storeId)}
             </div>
             {shiftNote && <div className="timer-sub">{shiftNote}</div>}
+            {breakMs > 0 && (
+              <div className="timer-sub">
+                พักไปแล้ว {fmtMin(Math.floor(breakMs / 60_000))}
+                {breakAllowed > 0 && ` จาก ${breakAllowed} นาที`}
+              </div>
+            )}
           </div>
         )}
-        <button
-          className={`punch punch-${nextType === 'IN' ? 'in' : 'out'}`}
-          onClick={doPunch}
-          disabled={busy || geo.kind === 'locating'}
-        >
-          <span className="punch-label">{busy ? 'กำลังบันทึก…' : nextType === 'IN' ? 'เข้างาน' : 'ออกงาน'}</span>
-          <span className="punch-sub">{nextType === 'IN' ? 'Clock in' : 'Clock out'}</span>
-        </button>
+        {open && onBreak && (
+          <div className={`timer timer-break ${breakAllowed && breakLeftMin < 0 ? 'timer-over' : ''}`} aria-live="off">
+            <div className="timer-label">กำลังพัก</div>
+            <div className="timer-value">{fmtDuration(serverNow - onBreak.ms)}</div>
+            <div className="timer-sub">
+              {breakAllowed > 0
+                ? breakLeftMin >= 0
+                  ? `พักได้ ${breakAllowed} นาที · เหลือ ${fmtMin(breakLeftMin)}`
+                  : `เกินเวลาพัก ${fmtMin(-breakLeftMin)}`
+                : `เริ่มพัก ${hhmm(onBreak.ts)} น.`}
+            </div>
+            <div className="timer-sub">ทำงานแล้ว {fmtDuration(workMs)} (หยุดนับระหว่างพัก)</div>
+          </div>
+        )}
+
+        {!open && (
+          <button className="punch punch-in" onClick={() => doPunch('IN')} disabled={busy || geo.kind === 'locating'}>
+            <span className="punch-label">{busy ? 'กำลังบันทึก…' : 'เข้างาน'}</span>
+            <span className="punch-sub">Clock in</span>
+          </button>
+        )}
+        {open && !onBreak && (
+          <>
+            <button className="btn btn-ghost btn-break" onClick={() => doPunch('BREAK_START')} disabled={busy}>
+              ☕ เริ่มพัก
+            </button>
+            <button className="punch punch-out" onClick={() => doPunch('OUT')} disabled={busy || geo.kind === 'locating'}>
+              <span className="punch-label">{busy ? 'กำลังบันทึก…' : 'ออกงาน'}</span>
+              <span className="punch-sub">Clock out</span>
+            </button>
+          </>
+        )}
+        {open && onBreak && (
+          <>
+            <button className="punch punch-back" onClick={() => doPunch('BREAK_END')} disabled={busy}>
+              <span className="punch-label">{busy ? 'กำลังบันทึก…' : 'กลับเข้างาน'}</span>
+              <span className="punch-sub">End break</span>
+            </button>
+            <button className="link" onClick={() => doPunch('OUT')} disabled={busy}>
+              เลิกงานเลย (ไม่กลับเข้างาน)
+            </button>
+          </>
+        )}
       </div>
 
       {result && (
@@ -171,9 +250,7 @@ export default function ClockPage({ me, setMe }: { me: MeResponse; setMe: (m: Me
           <ul className="list">
             {me.todayPunches.map((p) => (
               <li key={p.id} className="row-line">
-                <span className={`badge ${p.type === 'IN' ? 'badge-green' : 'badge-brown'}`}>
-                  {p.type === 'IN' ? 'เข้า' : 'ออก'}
-                </span>
+                <span className={`badge ${PUNCH_BADGE[p.type]}`}>{PUNCH_LABEL[p.type]}</span>
                 <span className="mono">{hhmm(p.ts)}</span>
                 <span className="muted">{storeName(p.storeId)}</span>
               </li>

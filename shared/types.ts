@@ -2,7 +2,7 @@
 
 export type Role = 'owner' | 'staff';
 export type StaffStatus = 'pending' | 'active' | 'inactive';
-export type PunchType = 'IN' | 'OUT';
+export type PunchType = 'IN' | 'OUT' | 'BREAK_START' | 'BREAK_END';
 
 export interface Store {
   id: string;
@@ -82,6 +82,8 @@ export type DayFlag =
   | 'upcoming'
   | 'not_in_yet'
   | 'in_progress'
+  | 'on_break'
+  | 'over_break'
   | 'ot';
 
 export interface DayRecord {
@@ -92,7 +94,9 @@ export interface DayRecord {
   shiftName?: string;
   schedStart?: string;
   schedEnd?: string;
-  breakMin?: number;
+  breakMin?: number; // scheduled break
+  breakTakenMin?: number; // break actually clocked (only when break punches exist)
+  overBreakMin: number;
   inTs?: string;
   outTs?: string;
   inStoreId?: string;
@@ -117,6 +121,8 @@ export interface StaffSummary {
   otMin: number;
   unscheduledMin: number;
   missingPunch: number;
+  overBreakCount: number;
+  overBreakMin: number;
 }
 
 // ---------- API payloads ----------
@@ -136,7 +142,8 @@ export interface MeResponse {
   stores: Store[];
   shiftTypes: ShiftType[];
   settings: Settings;
-  openPunch: Punch | null;
+  openPunch: Punch | null; // the IN of the current work session
+  sessionPunches: Punch[]; // punches after openPunch in the same session (breaks)
   todayPunches: Punch[];
   todayShifts: Shift[];
   upcomingShifts: Shift[]; // today + 13 days
@@ -158,9 +165,9 @@ export interface RegisterRequest {
 
 export interface PunchRequest {
   type: PunchType;
-  lat: number;
-  lng: number;
-  accuracy: number;
+  lat?: number; // required for IN/OUT, optional for breaks
+  lng?: number;
+  accuracy?: number;
 }
 
 export interface PunchResponse {
@@ -182,10 +189,20 @@ export interface RosterResponse {
   shifts: Shift[];
 }
 
+export interface RosterCell {
+  date: string;
+  staffId: string;
+  shiftTypeId: string | null; // null = day off
+  // Optional per-person adjustment of the template's times for this day
+  start?: string;
+  end?: string;
+  breakMin?: number;
+}
+
 export interface RosterSaveRequest {
   from: string;
   to: string;
-  cells: { date: string; staffId: string; shiftTypeId: string | null }[];
+  cells: RosterCell[];
 }
 
 export interface ReportResponse {

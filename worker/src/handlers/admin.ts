@@ -20,6 +20,7 @@ import {
   daysBetween,
   isDateStr,
   isMonthStr,
+  isTimeStr,
   monthRange,
   monthsBetween,
   weekStart,
@@ -185,7 +186,15 @@ export async function saveRoster(c: Ctx): Promise<RosterResponse> {
     }
     const type = typeById.get(cell.shiftTypeId);
     if (!type) throw new HttpError(400, `ไม่พบกะ ${cell.shiftTypeId}`);
-    if (rows.length === 1 && rows[0].shift.shiftTypeId === type.id) continue; // unchanged
+    // Optional per-person adjustment of this day's times
+    const start = cell.start ?? type.start;
+    const end = cell.end ?? type.end;
+    const breakMin = cell.breakMin ?? type.breakMin;
+    if (!isTimeStr(start) || !isTimeStr(end) || start === end) throw new HttpError(400, `เวลากะไม่ถูกต้อง (${cell.date})`);
+    if (!Number.isInteger(breakMin) || breakMin < 0 || breakMin > 240) throw new HttpError(400, 'เวลาพักต้องอยู่ระหว่าง 0–240 นาที');
+    const adjusted = start !== type.start || end !== type.end || breakMin !== type.breakMin;
+    const one = rows.length === 1 ? rows[0].shift : null;
+    if (one && one.shiftTypeId === type.id && one.start === start && one.end === end && one.breakMin === breakMin) continue; // unchanged
 
     const keep = rows[0];
     const shift: Shift = {
@@ -194,10 +203,10 @@ export async function saveRoster(c: Ctx): Promise<RosterResponse> {
       staffId: cell.staffId,
       storeId: type.storeId,
       shiftTypeId: type.id,
-      start: type.start,
-      end: type.end,
-      breakMin: type.breakMin,
-      note: '',
+      start,
+      end,
+      breakMin,
+      note: adjusted ? 'ปรับเวลา' : '',
     };
     const rec = shiftToRec(shift, nowIso);
     if (keep) {

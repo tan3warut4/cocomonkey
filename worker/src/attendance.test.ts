@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Punch, Settings, Shift } from '../../shared/types';
-import { calcDays, openPunchOf, summarize } from './attendance';
+import { breakMinutes, calcDays, currentSession, openPunchOf, summarize } from './attendance';
 import { bkkDate, bkkIso, bkkTime, bkkToMs, cellDate, cellEpoch, cellTime, monthsBetween, weekStart } from './time';
 
 const S: Settings = { lateGraceMin: 5, otMinMin: 30, otRoundMin: 15, maxAccuracyM: 100 };
@@ -10,7 +10,7 @@ const D = '2026-11-20';
 function shift(date: string, start: string, end: string, id = `sh-${date}-${start}`): Shift {
   return { id, date, staffId: 'A', storeId: 'S1', shiftTypeId: 'S1-M', start, end, breakMin: 60, note: '' };
 }
-function p(date: string, time: string, type: 'IN' | 'OUT'): Punch {
+function p(date: string, time: string, type: Punch['type']): Punch {
   const ms = bkkToMs(date, time);
   return {
     id: `${type}-${date}-${time}`,
@@ -133,4 +133,60 @@ test('date helpers', () => {
   assert.equal(weekStart('2026-11-22'), '2026-11-16'); // Sunday -> Monday
   assert.deepEqual(monthsBetween('2026-11-30', '2027-01-01'), ['2026-11', '2026-12', '2027-01']);
   assert.equal(bkkDate(Date.UTC(2026, 10, 19, 17, 30)), '2026-11-20'); // 00:30 Bangkok
+});
+
+test('clocked break shorter than scheduled: actual break is deducted', () => {
+  const [r] = run([shift(D, '08:30', '17:30')], [p(D, '08:30', 'IN'), p(D, '12:00', 'BREAK_START'), p(D, '12:45', 'BREAK_END'), p(D, '17:30', 'OUT')]);
+  assert.equal(r.breakTakenMin, 45);
+  assert.equal(r.regularMin, 495);
+  assert.equal(r.overBreakMin, 0);
+  assert.deepEqual(r.flags, []);
+});
+
+test('over break is flagged beyond the grace minutes', () => {
+  const ok = run([shift(D, '08:30', '17:30')], [p(D, '08:30', 'IN'), p(D, '12:00', 'BREAK_START'), p(D, '13:05', 'BREAK_END'), p(D, '17:30', 'OUT')])[0];
+  assert.equal(ok.overBreakMin, 0); // 65 min = within 5 min grace
+  const [r] = run([shift(D, '08:30', '17:30')], [p(D, '08:30', 'IN'), p(D, '12:00', 'BREAK_START'), p(D, '13:10', 'BREAK_END'), p(D, '17:30', 'OUT')]);
+  assert.equal(r.breakTakenMin, 70);
+  assert.equal(r.overBreakMin, 10);
+  assert.equal(r.regularMin, 470);
+  assert.ok(r.flags.includes('over_break'));
+  const [sum] = summarize([r], [{ id: 'A', name: 'A' }]);
+  assert.equal(sum.overBreakCount, 1);
+  assert.equal(sum.overBreakMin, 10);
+});
+
+test('two breaks add up; a break left open ends at OUT', () => {
+  const [r] = run(
+    [shift(D, '08:30', '17:30')],
+    [p(D, '08:30', 'IN'), p(D, '10:00', 'BREAK_START'), p(D, '10:15', 'BREAK_END'), p(D, '16:45', 'BREAK_START'), p(D, '17:30', 'OUT')],
+  );
+  assert.equal(r.breakTakenMin, 60);
+  assert.equal(r.regularMin, 480);
+});
+
+test('on break right now, and session state', () => {
+  const punches = [p(D, '08:30', 'IN'), p(D, '12:00', 'BREAK_START')];
+  const now = bkkToMs(D, '12:20');
+  const [r] = run([shift(D, '08:30', '17:30')], punches, now);
+  assert.ok(r.flags.includes('on_break'));
+  assert.equal(r.breakTakenMin, 20);
+  const s = currentSession(punches, now)!;
+  assert.equal(s.in.time, '08:30:00');
+  assert.equal(s.onBreak?.time, '12:00:00');
+  assert.equal(openPunchOf(punches, now)?.type, 'IN');
+  const back = currentSession([...punches, p(D, '13:00', 'BREAK_END')], bkkToMs(D, '13:05'))!;
+  assert.equal(back.onBreak, null);
+  assert.equal(breakMinutes(back.rest, bkkToMs(D, '13:05')), 60);
+});
+
+test('break punches outside a work session are ignored', () => {
+  const [r] = run([shift(D, '08:30', '17:30')], [p(D, '07:00', 'BREAK_START'), p(D, '08:30', 'IN'), p(D, '17:30', 'OUT')]);
+  assert.equal(r.breakTakenMin, undefined);
+  assert.equal(r.regularMin, 480); // scheduled break deducted
+});
+
+test('unscheduled session subtracts clocked breaks', () => {
+  const [r] = run([], [p(D, '10:00', 'IN'), p(D, '12:00', 'BREAK_START'), p(D, '12:30', 'BREAK_END'), p(D, '14:00', 'OUT')]);
+  assert.equal(r.unscheduledMin, 210);
 });

@@ -66,6 +66,12 @@ export default function HistoryPage() {
                         {d.lateMin > 0 && <span className="t-amber"> · สาย {d.lateMin} นาที</span>}
                         {d.otMin > 0 && <span className="t-blue"> · OT {fmtMin(d.otMin)}</span>}
                       </div>
+                      {d.breakTakenMin !== undefined && (
+                        <div className={`small ${d.overBreakMin ? 't-amber' : 'muted'}`}>
+                          พัก {d.breakTakenMin} นาที{d.breakMin ? ` จาก ${d.breakMin}` : ''}
+                          {d.overBreakMin > 0 && ` · เกิน ${d.overBreakMin} นาที`}
+                        </div>
+                      )}
                       <Flags flags={d.flags.filter((f) => f !== 'late' && f !== 'ot')} />
                     </div>
                   </li>

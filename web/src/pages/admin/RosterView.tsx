@@ -1,11 +1,32 @@
-import type { RosterResponse, Store } from '@shared/types';
+import type { RosterCell, RosterResponse, ShiftType, Staff, Store } from '@shared/types';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ErrorBox, Pager, Spinner } from '../../components/ui';
 import { api, errMsg } from '../../lib/api';
-import { addDays, fmtDate, todayStr, weekStart } from '../../lib/format';
+import { addDays, fmtDate, fmtMin, todayStr, weekStart } from '../../lib/format';
 
 const key = (date: string, staffId: string) => `${date}|${staffId}`;
-const CUSTOM = '__custom';
+
+/** One roster cell: a shift template plus this day's (possibly adjusted) times. typeId '' = legacy custom row. */
+interface CellVal {
+  typeId: string;
+  start: string;
+  end: string;
+  breakMin: number;
+}
+type Grid = Record<string, CellVal | null>;
+
+const same = (a: CellVal | null | undefined, b: CellVal | null | undefined) =>
+  (!a && !b) || (!!a && !!b && a.typeId === b.typeId && a.start === b.start && a.end === b.end && a.breakMin === b.breakMin);
+
+const isAdjusted = (v: CellVal, t?: ShiftType) => !!t && (v.start !== t.start || v.end !== t.end || v.breakMin !== t.breakMin);
+
+/** Working minutes of a shift: end - start (overnight wraps) - break. */
+function workMinutes(start: string, end: string, breakMin: number): number {
+  const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+  let d = toMin(end) - toMin(start);
+  if (d <= 0) d += 1440;
+  return Math.max(0, d - breakMin);
+}
 
 /** "Cocomonkey สาขาจุฬา" -> "สาขาจุฬา": drop words every store name shares, but never leave just a number. */
 function shortNames(stores: Store[]): Map<string, string> {
@@ -21,13 +42,24 @@ function shortNames(stores: Store[]): Map<string, string> {
   );
 }
 
+function gridFrom(r: RosterResponse): Grid {
+  const valid = new Set(r.shiftTypes.map((t) => t.id));
+  const g: Grid = {};
+  for (const s of r.shifts) {
+    const k = key(s.date, s.staffId);
+    if (k in g) continue;
+    g[k] = { typeId: valid.has(s.shiftTypeId) ? s.shiftTypeId : '', start: s.start, end: s.end, breakMin: s.breakMin };
+  }
+  return g;
+}
+
 export default function RosterView() {
   const [from, setFrom] = useState(() => weekStart(todayStr()));
   const [data, setData] = useState<RosterResponse | null>(null);
-  const [grid, setGrid] = useState<Record<string, string>>({});
-  const [orig, setOrig] = useState<Record<string, string>>({});
-  const [custom, setCustom] = useState<Record<string, string>>({});
+  const [grid, setGrid] = useState<Grid>({});
+  const [orig, setOrig] = useState<Grid>({});
   const [storeFilter, setStoreFilter] = useState('all');
+  const [editing, setEditing] = useState<{ staff: Staff; date: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [msg, setMsg] = useState('');
@@ -37,22 +69,10 @@ export default function RosterView() {
   const today = todayStr();
 
   const apply = useCallback((r: RosterResponse) => {
-    const valid = new Set(r.shiftTypes.map((t) => t.id));
-    const g: Record<string, string> = {};
-    const c: Record<string, string> = {};
-    for (const s of r.shifts) {
-      const k = key(s.date, s.staffId);
-      if (k in g) continue;
-      if (valid.has(s.shiftTypeId)) g[k] = s.shiftTypeId;
-      else {
-        g[k] = CUSTOM;
-        c[k] = `${s.start}–${s.end}`;
-      }
-    }
+    const g = gridFrom(r);
     setData(r);
     setGrid(g);
     setOrig(g);
-    setCustom(c);
   }, []);
 
   useEffect(() => {
@@ -70,7 +90,7 @@ export default function RosterView() {
     };
   }, [from, apply, reload]);
 
-  const dirty = Object.keys({ ...grid, ...orig }).filter((k) => (grid[k] ?? '') !== (orig[k] ?? ''));
+  const dirty = Object.keys({ ...grid, ...orig }).filter((k) => !same(grid[k], orig[k]));
 
   function go(weeks: number | null) {
     if (dirty.length && !window.confirm('มีการแก้ไขที่ยังไม่บันทึก ต้องการทิ้งการแก้ไขหรือไม่?')) return;
@@ -91,12 +111,13 @@ export default function RosterView() {
     setError('');
     try {
       const prev = await api.roster(addDays(from, -7));
+      const prevGrid = gridFrom(prev);
       const valid = new Set(prev.shiftTypes.filter((t) => t.active).map((t) => t.id));
       const g = { ...grid };
       for (const s of staff) {
         days.forEach((d, i) => {
-          const p = prev.shifts.find((x) => x.staffId === s.id && x.date === addDays(from, i - 7));
-          g[key(d, s.id)] = p && valid.has(p.shiftTypeId) ? p.shiftTypeId : '';
+          const v = prevGrid[key(addDays(from, i - 7), s.id)];
+          g[key(d, s.id)] = v && valid.has(v.typeId) ? { ...v } : null;
         });
       }
       setGrid(g);
@@ -113,12 +134,13 @@ export default function RosterView() {
     setError('');
     setMsg('');
     try {
-      const cells = dirty
-        .filter((k) => grid[k] !== CUSTOM)
-        .map((k) => {
-          const [date, staffId] = k.split('|');
-          return { date, staffId, shiftTypeId: grid[k] || null };
-        });
+      const cells: RosterCell[] = [];
+      for (const k of dirty) {
+        const [date, staffId] = k.split('|');
+        const v = grid[k];
+        if (!v) cells.push({ date, staffId, shiftTypeId: null });
+        else if (v.typeId) cells.push({ date, staffId, shiftTypeId: v.typeId, start: v.start, end: v.end, breakMin: v.breakMin });
+      }
       apply(await api.saveRoster({ from, to: addDays(from, 6), cells }));
       setMsg('บันทึกตารางกะแล้ว');
     } catch (e) {
@@ -171,51 +193,35 @@ export default function RosterView() {
                 </th>
                 {days.map((d) => {
                   const k = key(d, s.id);
-                  const v = grid[k] ?? '';
-                  const t = typeById.get(v);
-                  const isDirty = (grid[k] ?? '') !== (orig[k] ?? '');
+                  const v = grid[k] ?? null;
+                  const t = v ? typeById.get(v.typeId) : undefined;
+                  const adjusted = !!v && isAdjusted(v, t);
+                  const isDirty = !same(grid[k], orig[k]);
                   return (
                     <td key={d}>
-                      <div className={`cell ${t ? `cell-t${toneOf.get(t.id)}` : v === CUSTOM ? 'cell-custom' : 'cell-off'} ${isDirty ? 'cell-dirty' : ''}`}>
-                        <div className="cell-label">
-                          {t ? (
+                      <button
+                        type="button"
+                        className={`cell ${t ? `cell-t${toneOf.get(t.id)}` : v ? 'cell-custom' : 'cell-off'} ${isDirty ? 'cell-dirty' : ''}`}
+                        aria-label={`${s.nickname || s.name} ${d}`}
+                        onClick={() => setEditing({ staff: s, date: d })}
+                      >
+                        <span className="cell-label">
+                          {v ? (
                             <>
-                              <strong>{t.name}</strong>
-                              <span>{t.start}</span>
-                              {t.storeId !== s.storeId && <em>{short.get(t.storeId)}</em>}
-                            </>
-                          ) : v === CUSTOM ? (
-                            <>
-                              <strong>กำหนดเอง</strong>
-                              <span>{custom[k]}</span>
+                              <strong>
+                                {t?.name ?? 'กำหนดเอง'}
+                                {adjusted && <span className="cell-adj"> ✎</span>}
+                              </strong>
+                              <span className="cell-time">
+                                {v.start}–{v.end}
+                              </span>
+                              {t && t.storeId !== s.storeId && <em>{short.get(t.storeId)}</em>}
                             </>
                           ) : (
                             <span className="muted">หยุด</span>
                           )}
-                        </div>
-                        <select
-                          className="cell-select"
-                          value={v}
-                          aria-label={`${s.name} ${d}`}
-                          onChange={(e) => setGrid({ ...grid, [k]: e.target.value })}
-                        >
-                          <option value="">หยุด</option>
-                          {v === CUSTOM && <option value={CUSTOM}>กำหนดเอง {custom[k]}</option>}
-                          {data.stores
-                            .filter((st) => st.active)
-                            .map((st) => (
-                              <optgroup key={st.id} label={st.name}>
-                                {types
-                                  .filter((x) => x.storeId === st.id)
-                                  .map((x) => (
-                                    <option key={x.id} value={x.id}>
-                                      {x.name} {x.start}–{x.end}
-                                    </option>
-                                  ))}
-                              </optgroup>
-                            ))}
-                        </select>
-                      </div>
+                        </span>
+                      </button>
                     </td>
                   );
                 })}
@@ -248,8 +254,147 @@ export default function RosterView() {
         </button>
       </div>
       <p className="muted small">
-        แก้ชื่อ/เวลาของกะได้ในแท็บ ShiftTypes ของ Google Sheet · 1 คนมีได้ 1 กะต่อวัน
+        แตะช่องเพื่อเลือกกะ หรือปรับเวลาเฉพาะคนเฉพาะวัน (✎ = ปรับเวลาจากปกติ) · 1 คนมีได้ 1 กะต่อวัน
       </p>
+
+      {editing && (
+        <ShiftEditor
+          staff={editing.staff}
+          date={editing.date}
+          value={grid[key(editing.date, editing.staff.id)] ?? null}
+          types={types}
+          stores={data.stores.filter((st) => st.active)}
+          onClose={() => setEditing(null)}
+          onDone={(v) => {
+            setGrid({ ...grid, [key(editing.date, editing.staff.id)]: v });
+            setEditing(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ShiftEditor({
+  staff,
+  date,
+  value,
+  types,
+  stores,
+  onClose,
+  onDone,
+}: {
+  staff: Staff;
+  date: string;
+  value: CellVal | null;
+  types: ShiftType[];
+  stores: Store[];
+  onClose: () => void;
+  onDone: (v: CellVal | null) => void;
+}) {
+  const [v, setV] = useState<CellVal | null>(value && value.typeId ? { ...value } : null);
+  const t = v ? types.find((x) => x.id === v.typeId) : undefined;
+  const legacy = !!value && !value.typeId;
+  const [touched, setTouched] = useState(false);
+
+  function pick(type: ShiftType | null) {
+    setTouched(true);
+    if (!type) return setV(null);
+    // Switching to another shift resets the times to that shift's defaults
+    setV(v && v.typeId === type.id ? v : { typeId: type.id, start: type.start, end: type.end, breakMin: type.breakMin });
+  }
+
+  const valid = !v || (/^\d{2}:\d{2}$/.test(v.start) && /^\d{2}:\d{2}$/.test(v.end) && v.start !== v.end && v.breakMin >= 0);
+
+  return (
+    <div className="sheet-backdrop" onClick={onClose}>
+      <div className="sheet" role="dialog" aria-label="แก้ไขกะ" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-head">
+          <div>
+            <strong>{staff.nickname || staff.name}</strong>
+            <div className="muted small">{fmtDate(date, { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+          </div>
+          <button className="btn btn-icon btn-ghost" onClick={onClose} aria-label="ปิด">
+            ×
+          </button>
+        </div>
+
+        {legacy && (
+          <p className="small t-amber">
+            ตอนนี้เป็นกะกำหนดเอง {value!.start}–{value!.end} (แก้ใน Sheet) · เลือกกะด้านล่างเพื่อแทนที่
+          </p>
+        )}
+
+        <div className="sheet-options">
+          <button className={`opt ${!v && !(legacy && !touched) ? 'active' : ''}`} onClick={() => pick(null)}>
+            หยุด
+          </button>
+          {stores.map((st) => {
+            const list = types.filter((x) => x.storeId === st.id);
+            if (!list.length) return null;
+            return (
+              <div key={st.id} className="opt-group">
+                <div className="opt-store">{st.name}</div>
+                {list.map((x) => (
+                  <button key={x.id} className={`opt ${v?.typeId === x.id ? 'active' : ''}`} onClick={() => pick(x)}>
+                    <strong>{x.name}</strong> {x.start}–{x.end}
+                  </button>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+
+        {v && t && (
+          <div className="sheet-times">
+            <div className="row-between">
+              <strong>ปรับเวลาเฉพาะวันนี้</strong>
+              {isAdjusted(v, t) && (
+                <button className="link small" onClick={() => setV({ ...v, start: t.start, end: t.end, breakMin: t.breakMin })}>
+                  ใช้เวลาปกติ
+                </button>
+              )}
+            </div>
+            <div className="time-row">
+              <label>
+                เริ่ม
+                <input type="time" value={v.start} onChange={(e) => setV({ ...v, start: e.target.value.slice(0, 5) })} />
+              </label>
+              <label>
+                เลิก
+                <input type="time" value={v.end} onChange={(e) => setV({ ...v, end: e.target.value.slice(0, 5) })} />
+              </label>
+              <label>
+                พัก (นาที)
+                <input
+                  type="number"
+                  min={0}
+                  max={240}
+                  step={5}
+                  value={v.breakMin}
+                  onChange={(e) => setV({ ...v, breakMin: Math.max(0, Math.min(240, Number(e.target.value) || 0)) })}
+                />
+              </label>
+            </div>
+            {valid && (
+              <p className="small muted">
+                ทำงาน {fmtMin(workMinutes(v.start, v.end, v.breakMin))}
+                {v.end < v.start && ' · เลิกวันถัดไป'}
+                {isAdjusted(v, t) && ` · ปกติ ${t.start}–${t.end} พัก ${t.breakMin} นาที`}
+              </p>
+            )}
+          </div>
+        )}
+
+        <div className="actions">
+          <button className="btn btn-ghost" onClick={onClose}>
+            ยกเลิก
+          </button>
+          <button className="btn btn-primary" disabled={!valid} onClick={() => onDone(legacy && !touched ? value : v)}>
+            ตกลง
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

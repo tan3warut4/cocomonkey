@@ -147,7 +147,7 @@ export function toShift(r: Rec, row: number): Shift | null {
 export function toPunch(r: Rec, row: number): Punch | null {
   const type = str(r.type).toUpperCase();
   const staffId = str(r.staff_id);
-  if ((type !== 'IN' && type !== 'OUT') || !staffId) return null;
+  if (!['IN', 'OUT', 'BREAK_START', 'BREAK_END'].includes(type) || !staffId) return null;
   let ms = cellEpoch(r.timestamp);
   if (ms == null) {
     const d = cellDate(r.date);
@@ -163,7 +163,7 @@ export function toPunch(r: Rec, row: number): Punch | null {
     time: bkkTime(ms),
     staffId,
     storeId: str(r.store_id),
-    type,
+    type: type as Punch['type'],
     lat: num(r.lat),
     lng: num(r.lng),
     accuracyM: num(r.accuracy_m),
