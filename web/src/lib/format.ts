@@ -42,6 +42,15 @@ export function fmtMin(min: number): string {
   return m ? `${h} ชม. ${m} นาที` : `${h} ชม.`;
 }
 
+/** 3725000 ms -> "01:02:05" (stopwatch) */
+export function fmtDuration(ms: number): string {
+  const t = Math.max(0, Math.floor(ms / 1000));
+  return [Math.floor(t / 3600), Math.floor((t % 3600) / 60), t % 60].map((n) => String(n).padStart(2, '0')).join(':');
+}
+
+/** Bangkok date + HH:mm -> epoch ms */
+export const bkkMs = (date: string, time: string) => Date.parse(`${date}T${time}:00+07:00`);
+
 /** 125 -> "2:05" */
 export const fmtHM = (min: number) => `${Math.floor(min / 60)}:${pad(min % 60)}`;
 

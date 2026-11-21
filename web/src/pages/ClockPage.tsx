@@ -2,7 +2,7 @@ import type { MeResponse, PunchType } from '@shared/types';
 import { useCallback, useEffect, useState } from 'react';
 import { Card, PinIcon, RefreshIcon } from '../components/ui';
 import { api, errMsg } from '../lib/api';
-import { fmtClock, fmtLongDate, hhmm, staffName } from '../lib/format';
+import { bkkMs, fmtClock, fmtDuration, fmtLongDate, fmtMin, hhmm, staffName } from '../lib/format';
 import { type Position, fmtDistance, getPosition, nearestStore } from '../lib/geo';
 
 type GeoState =
@@ -16,6 +16,11 @@ export default function ClockPage({ me, setMe }: { me: MeResponse; setMe: (m: Me
   const [geo, setGeo] = useState<GeoState>({ kind: 'idle' });
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  // Phone clocks can be off; measure elapsed time against the server's clock.
+  const [offsetMs] = useState(() => {
+    const t = Date.parse(me.serverTime);
+    return Number.isNaN(t) ? 0 : t - Date.now();
+  });
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -43,6 +48,26 @@ export default function ClockPage({ me, setMe }: { me: MeResponse; setMe: (m: Me
   const nextType: PunchType = me.openPunch ? 'OUT' : 'IN';
   const near = geo.kind === 'ok' ? nearestStore(me.stores, geo.pos) : null;
   const inside = !!near && near.distanceM <= near.store.radiusM;
+
+  // Live work timer while clocked in
+  const serverNow = now.getTime() + offsetMs;
+  const open = me.openPunch;
+  const openShift = open
+    ? [...me.todayShifts, ...me.upcomingShifts].find((s) => {
+        const st = bkkMs(s.date, s.start);
+        let en = bkkMs(s.date, s.end);
+        if (en <= st) en += 86_400_000;
+        return open.ms >= st - 4 * 3_600_000 && open.ms < en;
+      })
+    : undefined;
+  let shiftNote = '';
+  if (openShift) {
+    const st = bkkMs(openShift.date, openShift.start);
+    let en = bkkMs(openShift.date, openShift.end);
+    if (en <= st) en += 86_400_000;
+    const left = Math.round((en - serverNow) / 60_000);
+    shiftNote = left > 0 ? `เลิกกะ ${openShift.end} น. · อีก ${fmtMin(left)}` : `เลยเวลาเลิกกะ ${fmtMin(-left)}`;
+  }
 
   async function doPunch() {
     setBusy(true);
@@ -113,6 +138,16 @@ export default function ClockPage({ me, setMe }: { me: MeResponse; setMe: (m: Me
       </div>
 
       <div className="punch-wrap">
+        {open && (
+          <div className="timer" aria-live="off">
+            <div className="timer-label">ทำงานมาแล้ว</div>
+            <div className="timer-value">{fmtDuration(serverNow - open.ms)}</div>
+            <div className="timer-sub">
+              เข้างาน {hhmm(open.ts)} น. · {storeName(open.storeId)}
+            </div>
+            {shiftNote && <div className="timer-sub">{shiftNote}</div>}
+          </div>
+        )}
         <button
           className={`punch punch-${nextType === 'IN' ? 'in' : 'out'}`}
           onClick={doPunch}
@@ -121,11 +156,6 @@ export default function ClockPage({ me, setMe }: { me: MeResponse; setMe: (m: Me
           <span className="punch-label">{busy ? 'กำลังบันทึก…' : nextType === 'IN' ? 'เข้างาน' : 'ออกงาน'}</span>
           <span className="punch-sub">{nextType === 'IN' ? 'Clock in' : 'Clock out'}</span>
         </button>
-        {me.openPunch && (
-          <p className="muted center">
-            เข้างานเมื่อ {hhmm(me.openPunch.ts)} น. · {storeName(me.openPunch.storeId)}
-          </p>
-        )}
       </div>
 
       {result && (
